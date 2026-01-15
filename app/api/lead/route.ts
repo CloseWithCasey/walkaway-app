@@ -10,17 +10,19 @@ export async function POST(req: Request) {
     const body = await req.json();
 
     const sheetId = process.env.GOOGLE_SHEET_ID;
-    const keyFile = process.env.GOOGLE_KEYFILE;
+    const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
-    if (!sheetId || !keyFile) {
+    if (!sheetId || !saJson) {
       return NextResponse.json(
-        { error: "Missing env vars" },
+        { error: "Missing GOOGLE_SHEET_ID or GOOGLE_SERVICE_ACCOUNT_JSON" },
         { status: 500 }
       );
     }
 
+    const credentials = JSON.parse(saJson);
+
     const auth = new google.auth.GoogleAuth({
-      keyFile,
+      credentials,
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
 
@@ -52,8 +54,6 @@ export async function POST(req: Request) {
         ]],
       },
     });
-
-    console.log("LEAD SAVED TO SHEETS:", body.email);
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {
