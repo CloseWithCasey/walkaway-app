@@ -2,6 +2,35 @@
 
 import { useMemo, useState } from "react";
 
+export default function Home() {
+  return (
+    <main style={{ maxWidth: 880, margin: "0 auto", padding: 24 }}>
+      <header style={{ marginBottom: 24 }}>
+  <h1 style={{ fontSize: 32, marginBottom: 8 }}>
+    Walkaway Calculator
+  </h1>
+
+  <p style={{ fontSize: 16, lineHeight: 1.6 }}>
+    Wondering what you’d actually walk away with if you sold your home?
+    This calculator gives you a realistic <strong>net proceeds range</strong>
+    based on current market data.
+  </p>
+
+  <p style={{ marginTop: 10, opacity: 0.85 }}>
+    No pressure. No spam. Just numbers.
+  </p>
+
+  <p style={{ marginTop: 14, fontStyle: "italic" }}>
+    — Casey Cooke, Close With Casey
+  </p>
+</header>
+
+
+      {/* FORM STARTS HERE */}
+    </main>
+  );
+}
+
 type Condition = "needs_work" | "average" | "updated" | "renovated";
 type Timeline = "curious" | "3_6" | "0_3";
 
