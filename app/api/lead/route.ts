@@ -2,6 +2,8 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
+import { Resend } from "resend";
+
 
 export async function GET() {
   return NextResponse.json({ ok: true });
@@ -56,6 +58,30 @@ export async function POST(req: Request) {
         ]],
       },
     });
+    const resendKey = process.env.RESEND_API_KEY;
+const notifyEmail = process.env.NOTIFY_EMAIL;
+
+if (resendKey && notifyEmail) {
+  const resend = new Resend(resendKey);
+
+  await resend.emails.send({
+    from: "Walkaway Calculator <leads@resend.dev>",
+    to: notifyEmail,
+    subject: "New Walkaway Lead Submitted",
+    html: `
+      <h2>New Walkaway Lead</h2>
+      <p><strong>Name:</strong> ${body.name ?? ""}</p>
+      <p><strong>Email:</strong> ${body.email ?? ""}</p>
+      <p><strong>Phone:</strong> ${body.phone ?? ""}</p>
+      <p><strong>Address:</strong> ${body.address ?? ""}</p>
+      <p><strong>Net Range:</strong> 
+        $${Math.round(body.netLow ?? 0).toLocaleString()} –
+        $${Math.round(body.netHigh ?? 0).toLocaleString()}
+      </p>
+    `,
+  });
+}
+
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {
