@@ -1,9 +1,86 @@
 export const runtime = "nodejs";
 
+import twilio from "twilio";
 import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { Resend } from "resend";
 
+// ========== CONFIGURATION ==========
+const EMAIL_SENDER = "Casey Cooke <leads@closewithcasey.org>";
+
+// ========== VALIDATION ==========
+function validateLead(body: Record<string, unknown>): {
+  valid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  if (!body.name?.toString().trim()) errors.push("Name is required");
+  if (!body.email?.toString().trim()) errors.push("Email is required");
+  if (!body.phone?.toString().trim()) errors.push("Phone is required");
+  if (!body.sqft || Number(body.sqft) <= 0)
+    errors.push("Square footage must be > 0");
+
+  return { valid: errors.length === 0, errors };
+}
+
+function formatLeadRow(body: Record<string, unknown>): unknown[] {
+  return [
+    new Date().toISOString(),
+    body.name ?? "",
+    body.email ?? "",
+    body.phone ?? "",
+    body.address ?? "",
+    body.beds ?? "",
+    body.baths ?? "",
+    body.sqft ?? "",
+    body.condition ?? "",
+    body.timeline ?? "",
+    body.mortgagePayoff ?? "",
+    body.concessions ? "yes" : "no",
+    Math.round(Number(body.lowSale ?? 0)),
+    Math.round(Number(body.highSale ?? 0)),
+    Math.round(Number(body.netLow ?? 0)),
+    Math.round(Number(body.netHigh ?? 0)),
+  ];
+}
+
+function formatEmailHtml(body: Record<string, unknown>): string {
+  const netLow = Math.round(Number(body.netLow ?? 0)).toLocaleString();
+  const netHigh = Math.round(Number(body.netHigh ?? 0)).toLocaleString();
+
+  return `
+    <h2>New Walkaway Lead</h2>
+    <table style="width: 100%; border-collapse: collapse;">
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 8px; font-weight: bold;">Name:</td>
+        <td style="padding: 8px;">${body.name ?? "—"}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 8px; font-weight: bold;">Email:</td>
+        <td style="padding: 8px;">${body.email ?? "—"}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 8px; font-weight: bold;">Phone:</td>
+        <td style="padding: 8px;">${body.phone ?? "—"}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 8px; font-weight: bold;">Address:</td>
+        <td style="padding: 8px;">${body.address ?? "—"}</td>
+      </tr>
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 8px; font-weight: bold;">Sq Ft:</td>
+        <td style="padding: 8px;">${body.sqft ?? "—"}</td>
+      </tr>
+      <tr style="background-color: #f9f9f9;">
+        <td style="padding: 8px; font-weight: bold;">Net Range:</td>
+        <td style="padding: 8px; font-weight: bold; color: #2d5016;">$${netLow} – $${netHigh}</td>
+      </tr>
+    </table>
+  `;
+}
+
+// ========== ENDPOINTS ==========
 export async function GET() {
   return NextResponse.json({ ok: true });
 }
@@ -12,12 +89,21 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
+    // Validate input
+    const { valid, errors } = validateLead(body);
+    if (!valid) {
+      return NextResponse.json({ error: errors.join("; ") }, { status: 400 });
+    }
+
     const sheetId = process.env.GOOGLE_SHEET_ID;
     const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 
     if (!sheetId || !saJson) {
+      console.error(
+        "Missing env: GOOGLE_SHEET_ID or GOOGLE_SERVICE_ACCOUNT_JSON"
+      );
       return NextResponse.json(
-        { error: "Missing GOOGLE_SHEET_ID or GOOGLE_SERVICE_ACCOUNT_JSON" },
+        { error: "Server configuration error" },
         { status: 500 }
       );
     }
@@ -31,84 +117,91 @@ export async function POST(req: Request) {
 
     const sheets = google.sheets({ version: "v4", auth });
 
-    // 1) Always write to Sheets first
+    // 1) Save to Sheets (critical path)
     await sheets.spreadsheets.values.append({
       spreadsheetId: sheetId,
       range: "A1",
       valueInputOption: "USER_ENTERED",
       requestBody: {
-        values: [[
-          new Date().toISOString(),
-          body.name ?? "",
-          body.email ?? "",
-          body.phone ?? "",
-          body.address ?? "",
-          body.beds ?? "",
-          body.baths ?? "",
-          body.sqft ?? "",
-          body.condition ?? "",
-          body.timeline ?? "",
-          body.mortgagePayoff ?? "",
-          body.concessions ? "yes" : "no",
-          body.lowSale ?? "",
-          body.highSale ?? "",
-          body.netLow ?? "",
-          body.netHigh ?? "",
-        ]],
+        values: [formatLeadRow(body)],
       },
     });
 
-    console.log("LEAD SAVED TO SHEETS:", body.email);
+    console.log(`[LEAD] ${body.email} saved to Sheets`);
 
-    // 2) Then attempt email (never block saving the lead)
-    const resendKey = process.env.RESEND_API_KEY;
-    const notifyEmail = process.env.NOTIFY_EMAIL;
-
-    console.log("RESEND ENV CHECK", {
-      hasKey: !!resendKey,
-      notifyEmail: notifyEmail ?? "MISSING",
+    // 2) Send email (non-blocking, failures logged)
+    sendEmailAsync(body).catch((err: unknown) => {
+      const error = err as { message?: string } | null;
+      console.error(
+        `[EMAIL] Failed for ${body.email}:`,
+        error?.message || err
+      );
     });
 
-    if (resendKey && notifyEmail) {
-      try {
-        const resend = new Resend(resendKey);
-
-        const { data, error } = await resend.emails.send({
-          // Use Resend default sender until you verify a domain
-          from: "Casey Cooke <leads@closewithcasey.org>",
-          to: notifyEmail,
-          subject: "New Walkaway Lead Submitted",
-          html: `
-            <h2>New Walkaway Lead</h2>
-            <p><strong>Name:</strong> ${body.name ?? ""}</p>
-            <p><strong>Email:</strong> ${body.email ?? ""}</p>
-            <p><strong>Phone:</strong> ${body.phone ?? ""}</p>
-            <p><strong>Address:</strong> ${body.address ?? ""}</p>
-            <p><strong>Net Range:</strong>
-              $${Math.round(body.netLow ?? 0).toLocaleString()} –
-              $${Math.round(body.netHigh ?? 0).toLocaleString()}
-            </p>
-          `,
-        });
-
-        if (error) {
-          console.error("RESEND SEND ERROR:", error);
-        } else {
-          console.log("RESEND SENT OK:", data);
-        }
-      } catch (emailErr: any) {
-        console.error("RESEND THROW:", emailErr?.message || emailErr);
-      }
-    }
-
     return NextResponse.json({ ok: true });
-  } catch (err: any) {
-    console.error("API ERROR:", err?.message || err);
+  } catch (err: unknown) {
+    const error = err as { message?: string } | null;
+    console.error("[API_ERROR]", error?.message || err);
     return NextResponse.json(
-      { error: err?.message || "Server error" },
+      { error: "Server error" },
       { status: 500 }
     );
   }
+}
+// ---- TWILIO SMS ----
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const fromNumber = process.env.TWILIO_FROM_NUMBER;
+
+const digits = String(body.phone ?? "").replace(/\D/g, "");
+const toNumber =
+  digits.length >= 10 ? `+1${digits.slice(-10)}` : "";
+
+if (accountSid && authToken && fromNumber && toNumber) {
+  try {
+    const client = twilio(accountSid, authToken);
+
+    const msg = await client.messages.create({
+      body: `Walkaway estimate for ${body.address ?? "your home"}:
+Net range: $${Math.round(body.netLow)} – $${Math.round(body.netHigh)}
+
+Reply STOP to opt out.`,
+      from: fromNumber,
+      to: toNumber,
+    });
+
+    console.log("TWILIO SMS SENT:", msg.sid);
+  } catch (err: any) {
+    console.error("TWILIO SMS ERROR:", err?.message || err);
+  }
+} else {
+  console.log("TWILIO SMS SKIPPED (missing env vars or phone)");
+}
+
+// ========== HELPERS ==========
+async function sendEmailAsync(body: Record<string, unknown>): Promise<void> {
+  const resendKey = process.env.RESEND_API_KEY;
+  const notifyEmail = process.env.NOTIFY_EMAIL;
+
+  if (!resendKey || !notifyEmail) {
+    console.warn("[EMAIL] Missing RESEND_API_KEY or NOTIFY_EMAIL");
+    return;
+  }
+
+  const resend = new Resend(resendKey);
+
+  const { error } = await resend.emails.send({
+    from: EMAIL_SENDER,
+    to: notifyEmail,
+    subject: `New Lead: ${body.name}`,
+    html: formatEmailHtml(body),
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  console.log(`[EMAIL] Sent to ${notifyEmail} for ${body.email}`);
 }
 
 
