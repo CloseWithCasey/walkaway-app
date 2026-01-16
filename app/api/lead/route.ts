@@ -75,7 +75,7 @@ export async function POST(req: Request) {
 
         const { data, error } = await resend.emails.send({
           // Use Resend default sender until you verify a domain
-          from: "Walkaway Calculator <onboarding@resend.dev>",
+          from: "Walkaway Calculator <leads@closewithcasey.org>",
           to: notifyEmail,
           subject: "New Walkaway Lead Submitted",
           html: `
