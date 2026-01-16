@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import { google } from "googleapis";
 import { Resend } from "resend";
 
-
 export async function GET() {
   return NextResponse.json({ ok: true });
 }
@@ -32,7 +31,7 @@ export async function POST(req: Request) {
 
     const sheets = google.sheets({ version: "v4", auth });
 
-
+    // 1) Always write to Sheets first
     await sheets.spreadsheets.values.append({
       spreadsheetId: sheetId,
       range: "A1",
@@ -58,48 +57,55 @@ export async function POST(req: Request) {
         ]],
       },
     });
+
+    console.log("LEAD SAVED TO SHEETS:", body.email);
+
+    // 2) Then attempt email (never block saving the lead)
     const resendKey = process.env.RESEND_API_KEY;
-const notifyEmail = process.env.NOTIFY_EMAIL;
+    const notifyEmail = process.env.NOTIFY_EMAIL;
 
-console.log("RESEND ENV CHECK", {
-  hasKey: !!resendKey,
-  notifyEmail: notifyEmail ?? "MISSING",
-});
+    console.log("RESEND ENV CHECK", {
+      hasKey: !!resendKey,
+      notifyEmail: notifyEmail ?? "MISSING",
+    });
 
-if (resendKey && notifyEmail) {
-  const resend = new Resend(resendKey);
+    if (resendKey && notifyEmail) {
+      try {
+        const resend = new Resend(resendKey);
 
-  const { data, error } = await resend.emails.send({
-    // IMPORTANT: use Resend's default sender until you verify a domain
-    from: "Walkaway Calculator <onboarding@resend.dev>",
-    to: notifyEmail,
-    subject: "New Walkaway Lead Submitted",
-    html: `
-      <h2>New Walkaway Lead</h2>
-      <p><strong>Name:</strong> ${body.name ?? ""}</p>
-      <p><strong>Email:</strong> ${body.email ?? ""}</p>
-      <p><strong>Phone:</strong> ${body.phone ?? ""}</p>
-      <p><strong>Address:</strong> ${body.address ?? ""}</p>
-      <p><strong>Net Range:</strong>
-        $${Math.round(body.netLow ?? 0).toLocaleString()} –
-        $${Math.round(body.netHigh ?? 0).toLocaleString()}
-      </p>
-    `,
-  });
+        const { data, error } = await resend.emails.send({
+          // Use Resend default sender until you verify a domain
+          from: "Walkaway Calculator <onboarding@resend.dev>",
+          to: notifyEmail,
+          subject: "New Walkaway Lead Submitted",
+          html: `
+            <h2>New Walkaway Lead</h2>
+            <p><strong>Name:</strong> ${body.name ?? ""}</p>
+            <p><strong>Email:</strong> ${body.email ?? ""}</p>
+            <p><strong>Phone:</strong> ${body.phone ?? ""}</p>
+            <p><strong>Address:</strong> ${body.address ?? ""}</p>
+            <p><strong>Net Range:</strong>
+              $${Math.round(body.netLow ?? 0).toLocaleString()} –
+              $${Math.round(body.netHigh ?? 0).toLocaleString()}
+            </p>
+          `,
+        });
 
-  if (error) {
-    console.error("RESEND SEND ERROR:", error);
-  } else {
-    console.log("RESEND SENT OK:", data);
-  }
-}
-
+        if (error) {
+          console.error("RESEND SEND ERROR:", error);
+        } else {
+          console.log("RESEND SENT OK:", data);
+        }
+      } catch (emailErr: any) {
+        console.error("RESEND THROW:", emailErr?.message || emailErr);
+      }
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    console.error("SHEETS ERROR:", err?.message || err);
+    console.error("API ERROR:", err?.message || err);
     return NextResponse.json(
-      { error: err?.message || "Sheets error" },
+      { error: err?.message || "Server error" },
       { status: 500 }
     );
   }
