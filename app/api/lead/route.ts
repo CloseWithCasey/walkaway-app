@@ -148,38 +148,6 @@ export async function POST(req: Request) {
     );
   }
 }
-// SMS via Twilio (never block saving the lead)
-const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioFrom = process.env.TWILIO_FROM_NUMBER;
-
-const leadPhoneDigits = String(body.phone ?? "").replace(/\D/g, "");
-const leadTo =
-  leadPhoneDigits.length >= 10 ? `+1${leadPhoneDigits.slice(-10)}` : "";
-
-if (twilioSid && twilioToken && twilioFrom && leadTo) {
-  try {
-    const client = twilio(twilioSid, twilioToken);
-
-    const msg = await client.messages.create({
-      from: twilioFrom,
-      to: leadTo,
-      body: `Walkaway estimate for ${body.address ?? "your home"}:
-Net range: $${Math.round(body.netLow ?? 0).toLocaleString()} – $${Math.round(
-        body.netHigh ?? 0
-      ).toLocaleString()}
-
-Reply STOP to opt out.`,
-    });
-
-    console.log("TWILIO SMS SENT:", msg.sid);
-  } catch (smsErr: any) {
-    console.error("TWILIO SMS ERROR:", smsErr?.message || smsErr);
-  }
-} else {
-  console.log("TWILIO SMS SKIPPED (missing env vars or phone)");
-}
-
 
 // ========== HELPERS ==========
 async function sendEmailAsync(body: Record<string, unknown>): Promise<void> {
