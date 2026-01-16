@@ -61,11 +61,17 @@ export async function POST(req: Request) {
     const resendKey = process.env.RESEND_API_KEY;
 const notifyEmail = process.env.NOTIFY_EMAIL;
 
+console.log("RESEND ENV CHECK", {
+  hasKey: !!resendKey,
+  notifyEmail: notifyEmail ?? "MISSING",
+});
+
 if (resendKey && notifyEmail) {
   const resend = new Resend(resendKey);
 
-  await resend.emails.send({
-    from: "Walkaway Calculator <leads@resend.dev>",
+  const { data, error } = await resend.emails.send({
+    // IMPORTANT: use Resend's default sender until you verify a domain
+    from: "Walkaway Calculator <onboarding@resend.dev>",
     to: notifyEmail,
     subject: "New Walkaway Lead Submitted",
     html: `
@@ -74,12 +80,18 @@ if (resendKey && notifyEmail) {
       <p><strong>Email:</strong> ${body.email ?? ""}</p>
       <p><strong>Phone:</strong> ${body.phone ?? ""}</p>
       <p><strong>Address:</strong> ${body.address ?? ""}</p>
-      <p><strong>Net Range:</strong> 
+      <p><strong>Net Range:</strong>
         $${Math.round(body.netLow ?? 0).toLocaleString()} –
         $${Math.round(body.netHigh ?? 0).toLocaleString()}
       </p>
     `,
   });
+
+  if (error) {
+    console.error("RESEND SEND ERROR:", error);
+  } else {
+    console.log("RESEND SENT OK:", data);
+  }
 }
 
 
