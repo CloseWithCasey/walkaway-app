@@ -408,7 +408,7 @@ export default function Home() {
                         : STYLES.buttonDisabled),
                     }}
                   >
-                    {status === "sending" ? "Sending..." : "Send breakdown"}
+                    {status === "sending" ? "Sending..." : "Email me my estimate"}
                   </button>
                 )}
 
@@ -431,7 +431,8 @@ export default function Home() {
       >
         This is an estimate range, not an appraisal. Exact outcomes depend on
         timing, condition, and buyer behavior. By submitting this form, you agree to receive your requested home value
-        estimate by text message. Message frequency is limited. Reply STOP to opt out.
+        estimate by email. Text messages may follow once enabled. Reply STOP to opt out.
+
       </p>
     </main>
   );
