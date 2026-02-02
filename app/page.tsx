@@ -431,6 +431,8 @@ export default function Home() {
       >
         This is an estimate range, not an appraisal. Exact outcomes depend on
         timing, condition, and buyer behavior.
+        By submitting this form, you agree to receive your requested home value
+        estimate by text message. Message frequency is limited. Reply STOP to opt out.
       </p>
     </main>
   );
